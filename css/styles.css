@@ -467,3 +467,110 @@ body.dark .sidebar button:hover {
   display: flex;
   gap: 8px;
 }
+/* =========================================================
+   LOGIN PAGE
+   ========================================================= */
+body.login-page {
+  padding: 0;
+}
+
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,0.15), transparent 40%),
+    radial-gradient(800px 400px at 90% 20%, rgba(37,99,235,0.12), transparent 40%),
+    var(--bg);
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+  animation: loginIn .25s ease;
+}
+
+@keyframes loginIn {
+  from { transform: translateY(10px) scale(.98); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.login-logo {
+  font-size: 28px;
+}
+
+.login-card h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.login-card h2 {
+  text-align: center;
+  margin: 12px 0 4px;
+}
+
+.login-subtitle {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: transparent;
+}
+
+.input-group i {
+  color: var(--muted);
+  min-width: 16px;
+  text-align: center;
+}
+
+.input-group input {
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: 100%;
+}
+
+.input-group input:focus {
+  outline: none;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.login-error {
+  color: var(--danger);
+  font-size: 13px;
+  text-align: center;
+  margin-top: 4px;
+}
