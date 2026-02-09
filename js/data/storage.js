@@ -1,4 +1,4 @@
-// js/data/storage.js (V2 - Fachada API + Fallback local)
+// js/data/storage.js (V2 - Fachada API + Fallback local com data de chegada)
 
 import { apiGetPedidos, apiAddPedido, apiUpdateStatus, apiRemovePedido } from "./api.js";
 
@@ -28,22 +28,32 @@ function localAddPedido(data) {
     observacao: data.observacao || "",
     status: "Pendente",
     dataPedido: new Date().toISOString().slice(0, 10),
-    dataChegada: ""
+    dataChegada: data.dataChegada || ""
   };
   pedidos.push(novo);
   saveLocal(pedidos);
   return novo;
 }
 
-function localUpdateStatus(id, status) {
+function localUpdateStatus(id, status, dataChegada = null) {
   const pedidos = loadLocal();
   const p = pedidos.find(x => x.id === id);
   if (!p) return null;
 
-  p.status = status;
-  if (status === "Chegou") {
+  if (status) {
+    p.status = status;
+  }
+
+  // Se veio data, atualiza. Se veio null, mantém o que já existe.
+  if (typeof dataChegada === "string") {
+    p.dataChegada = dataChegada;
+  }
+
+  // Se marcou como "Chegou" e não tem data, seta hoje
+  if (p.status === "Chegou" && !p.dataChegada) {
     p.dataChegada = new Date().toISOString().slice(0, 10);
   }
+
   saveLocal(pedidos);
   return p;
 }
@@ -73,12 +83,18 @@ export async function addPedido(data) {
   }
 }
 
-export async function updateStatus(id, status) {
+/**
+ * Atualiza status e/ou data de chegada
+ * @param {number} id
+ * @param {string} status
+ * @param {string|null} dataChegada (YYYY-MM-DD ou null)
+ */
+export async function updateStatus(id, status, dataChegada = null) {
   try {
-    return await apiUpdateStatus(id, status);
+    return await apiUpdateStatus(id, status, dataChegada);
   } catch (e) {
     console.warn("API indisponível, usando fallback local:", e.message);
-    return localUpdateStatus(id, status);
+    return localUpdateStatus(id, status, dataChegada);
   }
 }
 

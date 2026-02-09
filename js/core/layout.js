@@ -6,6 +6,7 @@ import { logout, getCurrentUser } from "../data/auth.js";
  * Cria o layout base da aplicação:
  * - Sidebar
  * - Header com relógio
+ * - Saudação do usuário
  * - Área principal <main>
  * - Botão Sair (Logout)
  */
@@ -45,14 +46,17 @@ export function renderLayout(activePage = "dashboard") {
       <main class="main-content">
         <div class="container">
           <header class="header-top">
-            <h1 id="pageTitle">Dashboard</h1>
+            <div>
+              <h1 id="pageTitle">Dashboard</h1>
+              <div id="userGreeting" style="font-size:14px;color:var(--muted); margin-top:4px;">
+                <!-- Saudação do usuário -->
+              </div>
+            </div>
 
             <div class="top-clock">
               <div id="clockTime">00:00:00</div>
               <div id="clockDate">--/--/----</div>
             </div>
-
-            <div id="userInfo" style="font-size:12px;color:var(--muted);"></div>
           </header>
 
           <div id="pageContent"></div>
@@ -81,7 +85,7 @@ export function renderLayout(activePage = "dashboard") {
     });
   }
 
-  // Mostrar usuário logado (se existir)
+  // Mostrar saudação do usuário logado
   preencherUsuarioLogado();
 
   // Relógio
@@ -91,10 +95,16 @@ export function renderLayout(activePage = "dashboard") {
 async function preencherUsuarioLogado() {
   try {
     const user = await getCurrentUser();
-    const el = document.getElementById("userInfo");
-    if (el && user?.email) {
-      el.textContent = user.email;
-    }
+    const el = document.getElementById("userGreeting");
+    if (!el || !user) return;
+
+    // Tenta pegar nome do metadata, senão usa parte do email
+    const nome =
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      (user.email ? user.email.split("@")[0] : "Usuário");
+
+    el.textContent = `👋 Olá, ${nome}`;
   } catch (e) {
     // silencioso
   }

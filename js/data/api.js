@@ -1,4 +1,4 @@
-// js/data/api.js (V2 - Supabase)
+// js/data/api.js (V2 - Supabase com suporte a data de chegada manual)
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 import { getCurrentUser } from "./auth.js";
@@ -73,11 +73,28 @@ export async function apiAddPedido(pedido) {
   return mapRowToPedido(data);
 }
 
-export async function apiUpdateStatus(id, status) {
-  const patch = {
-    status,
-    data_chegada: status === "Chegou" ? new Date().toISOString().slice(0, 10) : null
-  };
+/**
+ * Atualiza status e/ou data de chegada
+ * @param {number} id
+ * @param {string} status
+ * @param {string|null} dataChegada (YYYY-MM-DD ou null)
+ */
+export async function apiUpdateStatus(id, status, dataChegada = null) {
+  const patch = {};
+
+  if (typeof status === "string") {
+    patch.status = status;
+  }
+
+  // Se veio uma string de data (YYYY-MM-DD), atualiza
+  if (typeof dataChegada === "string") {
+    patch.data_chegada = dataChegada || null;
+  }
+
+  // Se marcou como "Chegou" e não informou data, seta hoje
+  if (status === "Chegou" && !dataChegada) {
+    patch.data_chegada = new Date().toISOString().slice(0, 10);
+  }
 
   const { data, error } = await supabase
     .from(TABLE)
