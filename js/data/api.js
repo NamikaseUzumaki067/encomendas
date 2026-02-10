@@ -1,114 +1,111 @@
-// js/data/api.js (V2 - Supabase com suporte a data de chegada manual)
-
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+// js/data/api.js
+import { supabase } from "./storage.js";
 import { getCurrentUser } from "./auth.js";
 
-// ⚠️ Suas credenciais (publishable/anon key é OK no front)
-const SUPABASE_URL = "https://ljhgeoetyvhbafewnmgw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_85mJLqObjWFtZLFhefNm3w_b7o7sqZX";
+const TABLE = "orders";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// Ajuste o nome da tabela se necessário
-const TABLE = "orders"; // ou "pedidos"
-
-// Helpers
+/**
+ * Converte linha do Supabase para objeto usado no front
+ */
 function mapRowToPedido(row) {
   return {
     id: row.id,
     cliente: row.cliente,
     contato: row.contato,
     produto: row.produto,
-    codInterno: row.cod_interno || "",
-    observacao: row.observacao || "",
+    codInterno: row.cod_interno,
+    observacao: row.observacao,
     status: row.status,
     dataPedido: row.data_pedido,
-    dataChegada: row.data_chegada || ""
+    dataChegada: row.data_chegada,
+    userId: row.user_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
-function mapPedidoToRow(p) {
-  return {
-    cliente: p.cliente,
-    contato: p.contato,
-    produto: p.produto,
-    cod_interno: p.codInterno || null,
-    observacao: p.observacao || null,
-    status: p.status,
-    data_pedido: p.dataPedido,
-    data_chegada: p.dataChegada || null
-  };
-}
-
+/**
+ * 🔍 BUSCAR PEDIDOS
+ * Opção 01: TODOS os usuários autenticados veem TODOS os pedidos
+ */
 export async function apiGetPedidos() {
-  const user = await getCurrentUser();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select("*")
+    .order("data_pedido", { ascending: false });
 
-  let query = supabase.from(TABLE).select("*").order("data_pedido", { ascending: false });
-
-  if (user) {
-    query = query.eq("user_id", user.id);
-  }
-
-  const { data, error } = await query;
   if (error) throw error;
 
   return (data || []).map(mapRowToPedido);
 }
 
-export async function apiAddPedido(pedido) {
+/**
+ * ➕ CRIAR PEDIDO
+ * user_id é salvo para auditoria
+ */
+export async function apiCreatePedido(pedido) {
   const user = await getCurrentUser();
 
-  const row = mapPedidoToRow({
-    ...pedido,
-    status: "Pendente",
-    dataPedido: new Date().toISOString().slice(0, 10),
-    dataChegada: ""
-  });
+  const row = {
+    cliente: pedido.cliente,
+    contato: pedido.contato,
+    produto: pedido.produto,
+    cod_interno: pedido.codInterno || null,
+    observacao: pedido.observacao || null,
+    status: pedido.status || "Pendente",
+    data_pedido: pedido.dataPedido || new Date().toISOString().slice(0, 10),
+    data_chegada: pedido.dataChegada || null,
+    user_id: user ? user.id : null,
+  };
 
-  if (user) row.user_id = user.id;
+  const { data, error } = await supabase
+    .from(TABLE)
+    .insert(row)
+    .select()
+    .single();
 
-  const { data, error } = await supabase.from(TABLE).insert(row).select().single();
   if (error) throw error;
 
   return mapRowToPedido(data);
 }
 
 /**
- * Atualiza status e/ou data de chegada
- * @param {number} id
- * @param {string} status
- * @param {string|null} dataChegada (YYYY-MM-DD ou null)
+ * ✏️ ATUALIZAR PEDIDO
  */
-export async function apiUpdateStatus(id, status, dataChegada = null) {
-  const patch = {};
+export async function apiUpdatePedido(id, updates) {
+  const row = {
+    cliente: updates.cliente,
+    contato: updates.contato,
+    produto: updates.produto,
+    cod_interno: updates.codInterno,
+    observacao: updates.observacao,
+    status: updates.status,
+    data_chegada: updates.dataChegada,
+  };
 
-  if (typeof status === "string") {
-    patch.status = status;
-  }
-
-  // Se veio uma string de data (YYYY-MM-DD), atualiza
-  if (typeof dataChegada === "string") {
-    patch.data_chegada = dataChegada || null;
-  }
-
-  // Se marcou como "Chegou" e não informou data, seta hoje
-  if (status === "Chegou" && !dataChegada) {
-    patch.data_chegada = new Date().toISOString().slice(0, 10);
-  }
+  // remove undefined
+  Object.keys(row).forEach((k) => row[k] === undefined && delete row[k]);
 
   const { data, error } = await supabase
     .from(TABLE)
-    .update(patch)
+    .update(row)
     .eq("id", id)
     .select()
     .single();
 
   if (error) throw error;
+
   return mapRowToPedido(data);
 }
 
-export async function apiRemovePedido(id) {
-  const { error } = await supabase.from(TABLE).delete().eq("id", id);
+/**
+ * ❌ EXCLUIR PEDIDO
+ */
+export async function apiDeletePedido(id) {
+  const { error } = await supabase
+    .from(TABLE)
+    .delete()
+    .eq("id", id);
+
   if (error) throw error;
-  return true;
 }
