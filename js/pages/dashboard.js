@@ -1,6 +1,6 @@
 // js/pages/dashboard.js (V2 - Status por select + Data por calendário + ETA + Ações alinhadas)
 import { renderLayout } from "../core/layout.js";
-import { getPedidos, addPedido, updateStatus, removePedido } from "../data/storage.js";
+import { getPedidos, addPedido, updateStatus, removePedido } from "../data/api.js";
 import { desenharGrafico } from "../chart.js";
 
 let ticker = null;
