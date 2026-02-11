@@ -1,10 +1,15 @@
-// js/pages/dashboard.js (V2 - Status por select + Data por calendário + ETA + Ações alinhadas)
+// js/pages/dashboard.js
 import { renderLayout } from "../core/layout.js";
 import { getPedidos, addPedido, updateStatus, removePedido } from "../data/api.js";
 import { desenharGrafico } from "../chart.js";
+import { notify, confirmBox, showLoading, hideLoading } from "../core/ui.js";
 
 let ticker = null;
+let pedidosCache = [];
 
+/* =========================
+   Boot
+========================= */
 async function renderDashboard() {
   renderLayout("dashboard");
 
@@ -12,21 +17,36 @@ async function renderDashboard() {
   if (titleEl) titleEl.textContent = "📦 Dashboard";
 
   const content = document.getElementById("pageContent");
-  content.innerHTML = `
+  content.innerHTML = buildHTML();
+
+  bindFilters();
+  bindModais();
+
+  await refresh(true);
+
+  if (ticker) clearInterval(ticker);
+  ticker = setInterval(() => refresh(false), 60 * 1000);
+}
+
+/* =========================
+   HTML
+========================= */
+function buildHTML() {
+  return `
     <button id="btnAbrirModal" class="fab btn-primary" aria-label="Nova Encomenda">+</button>
 
     <div class="card">
       <div class="contador">
-        <span class="badge b-pendente" id="badgePendentes">
-          <i class="fa-solid fa-clock icon-pendente"></i>
+        <span class="badge b-pendente">
+          <i class="fa-solid fa-clock"></i>
           Pendentes: <strong id="countPendentes">0</strong>
         </span>
-        <span class="badge b-chegou" id="badgeChegaram">
-          <i class="fa-solid fa-box icon-chegou"></i>
+        <span class="badge b-chegou">
+          <i class="fa-solid fa-box"></i>
           Chegaram: <strong id="countChegaram">0</strong>
         </span>
-        <span class="badge b-avisado" id="badgeAvisados">
-          <i class="fa-solid fa-phone icon-avisado"></i>
+        <span class="badge b-avisado">
+          <i class="fa-solid fa-phone"></i>
           Avisados: <strong id="countAvisados">0</strong>
         </span>
       </div>
@@ -70,9 +90,14 @@ async function renderDashboard() {
       </table>
     </div>
 
-    <!-- MODAIS (mantidos iguais) -->
-    <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true">
-      <div class="modal" role="dialog" aria-modal="true">
+    ${buildModalsHTML()}
+  `;
+}
+
+function buildModalsHTML() {
+  return `
+    <div class="modal-backdrop" id="modalBackdrop">
+      <div class="modal">
         <h3>Nova Encomenda</h3>
         <div class="modal-form">
           <input type="text" id="modalCliente" placeholder="Cliente *">
@@ -88,8 +113,8 @@ async function renderDashboard() {
       </div>
     </div>
 
-    <div class="modal-backdrop" id="detalhesBackdrop" aria-hidden="true">
-      <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" id="detalhesBackdrop">
+      <div class="modal">
         <h3>Detalhes da Encomenda</h3>
         <div class="field"><label>Cliente</label><div id="detCliente"></div></div>
         <div class="field"><label>Contato</label><div id="detContato"></div></div>
@@ -105,41 +130,44 @@ async function renderDashboard() {
       </div>
     </div>
   `;
-
-  document.getElementById("busca").addEventListener("input", renderTabela);
-  document.getElementById("filtroStatus").addEventListener("change", renderTabela);
-
-  bindModais();
-  await refresh();
-
-  if (ticker) clearInterval(ticker);
-  ticker = setInterval(() => renderTabela(), 60 * 1000);
 }
 
-let lastCounts = { p: 0, c: 0, a: 0 };
+/* =========================
+   Data
+========================= */
+async function fetchPedidos(showLoader = false) {
+  try {
+    if (showLoader) showLoading("Carregando pedidos...");
+    pedidosCache = await getPedidos();
+  } catch (e) {
+    console.error(e);
+    notify.error("Erro ao carregar pedidos.");
+  } finally {
+    if (showLoader) hideLoading();
+  }
+}
 
-async function atualizarContadores() {
-  const pedidos = await getPedidos();
-  const pendentes = pedidos.filter(p => p.status === "Pendente").length;
-  const chegaram = pedidos.filter(p => p.status === "Chegou").length;
-  const avisados = pedidos.filter(p => p.status === "Cliente avisado").length;
+/* =========================
+   Render
+========================= */
+function atualizarContadores() {
+  const pendentes = pedidosCache.filter(p => p.status === "Pendente").length;
+  const chegaram = pedidosCache.filter(p => p.status === "Chegou").length;
+  const avisados = pedidosCache.filter(p => p.status === "Cliente avisado").length;
 
   document.getElementById("countPendentes").textContent = pendentes;
   document.getElementById("countChegaram").textContent = chegaram;
   document.getElementById("countAvisados").textContent = avisados;
-
-  lastCounts = { p: pendentes, c: chegaram, a: avisados };
 }
 
-async function renderTabela() {
-  const pedidos = await getPedidos();
+function renderTabela() {
   const tabela = document.getElementById("tabelaPedidos");
   const busca = document.getElementById("busca").value.toLowerCase();
   const filtroStatus = document.getElementById("filtroStatus").value;
 
   tabela.innerHTML = "";
 
-  pedidos.forEach(p => {
+  pedidosCache.forEach(p => {
     if (busca && !p.cliente.toLowerCase().includes(busca) && !p.produto.toLowerCase().includes(busca)) return;
     if (filtroStatus !== "todos" && p.status !== filtroStatus) return;
 
@@ -152,68 +180,79 @@ async function renderTabela() {
       <td>${p.produto}</td>
       <td>${p.codInterno || "-"}</td>
       <td>${p.dataPedido || "-"}</td>
-      <td><input type="date" class="input-date" data-date="${p.id}" value="${p.dataChegada || ""}"></td>
+      <td><input type="date" data-date="${p.id}" value="${p.dataChegada || ""}"></td>
       <td>${eta}</td>
       <td>
-        <select class="select-status" data-status="${p.id}">
+        <select data-status="${p.id}">
           <option value="Pendente" ${p.status === "Pendente" ? "selected" : ""}>Pendente</option>
           <option value="Chegou" ${p.status === "Chegou" ? "selected" : ""}>Chegou</option>
           <option value="Cliente avisado" ${p.status === "Cliente avisado" ? "selected" : ""}>Cliente avisado</option>
         </select>
       </td>
       <td>
-        <div class="acoes-wrap" style="display:flex; gap:8px; align-items:center; flex-wrap:nowrap;">
-          <button class="btn-secondary" data-detalhes="${p.id}">Detalhes</button>
-          <button class="btn-danger" data-excluir="${p.id}">Excluir</button>
-        </div>
+        <button class="btn-secondary" data-detalhes="${p.id}">Detalhes</button>
+        <button class="btn-danger" data-excluir="${p.id}">Excluir</button>
       </td>
     `;
     tabela.appendChild(tr);
   });
 
+  bindTabelaAcoes();
+}
+
+/* =========================
+   Actions
+========================= */
+function bindFilters() {
+  document.getElementById("busca").addEventListener("input", renderTabela);
+  document.getElementById("filtroStatus").addEventListener("change", renderTabela);
+}
+
+function bindTabelaAcoes() {
+  const tabela = document.getElementById("tabelaPedidos");
+
   tabela.querySelectorAll("[data-status]").forEach(sel => {
-    sel.addEventListener("change", async () => {
+    sel.onchange = async () => {
       const id = +sel.dataset.status;
       const novoStatus = sel.value;
       const dateInput = tabela.querySelector(`[data-date="${id}"]`);
       const novaData = dateInput ? dateInput.value || null : null;
       await updateStatus(id, novoStatus, novaData);
-      await refresh();
-    });
+      await refresh(false);
+      notify.success("Status atualizado.");
+    };
   });
 
   tabela.querySelectorAll("[data-date]").forEach(inp => {
-    inp.addEventListener("change", async () => {
+    inp.onchange = async () => {
       const id = +inp.dataset.date;
       const novaData = inp.value || null;
       const sel = tabela.querySelector(`[data-status="${id}"]`);
       const statusAtual = sel ? sel.value : "Pendente";
       await updateStatus(id, statusAtual, novaData);
-      await refresh();
-    });
+      await refresh(false);
+      notify.success("Data atualizada.");
+    };
   });
 
-  tabela.querySelectorAll("[data-detalhes]").forEach(btn =>
-    btn.onclick = () => abrirDetalhes(+btn.dataset.detalhes)
-  );
-  tabela.querySelectorAll("[data-excluir]").forEach(btn =>
+  tabela.querySelectorAll("[data-detalhes]").forEach(btn => {
+    btn.onclick = () => abrirDetalhes(+btn.dataset.detalhes);
+  });
+
+  tabela.querySelectorAll("[data-excluir]").forEach(btn => {
     btn.onclick = async () => {
-      if (confirm("Deseja remover este pedido?")) {
-        await removePedido(+btn.dataset.excluir);
-        await refresh();
-      }
-    }
-  );
+      const ok = await confirmBox("Deseja remover este pedido?", { danger: true });
+      if (!ok) return;
+      await removePedido(+btn.dataset.excluir);
+      await refresh(false);
+      notify.success("Pedido removido.");
+    };
+  });
 }
 
-async function refresh() {
-  await atualizarContadores();
-  await desenharGrafico();
-  await renderTabela();
-}
-
-/* ===== Modais e utilidades (mantidos) ===== */
-
+/* =========================
+   Modais
+========================= */
 function bindModais() {
   const btnAbrir = document.getElementById("btnAbrirModal");
   const backdrop = document.getElementById("modalBackdrop");
@@ -242,19 +281,24 @@ async function salvarNovaEncomenda() {
   const observacao = modalObservacao.value.trim();
 
   if (!cliente || !contato || !produto) {
-    alert("Preencha Cliente, Contato e Produto.");
+    notify.warning("Preencha Cliente, Contato e Produto.");
     return;
   }
 
-  await addPedido({ cliente, contato, produto, codInterno, observacao });
-  modalCliente.value = modalContato.value = modalProduto.value = modalCodInterno.value = modalObservacao.value = "";
-  fecharModal(modalBackdrop);
-  await refresh();
+  try {
+    await addPedido({ cliente, contato, produto, codInterno, observacao });
+    notify.success("Pedido criado com sucesso!");
+    modalCliente.value = modalContato.value = modalProduto.value = modalCodInterno.value = modalObservacao.value = "";
+    fecharModal(modalBackdrop);
+    await refresh(false);
+  } catch (e) {
+    console.error(e);
+    notify.error("Erro ao salvar pedido.");
+  }
 }
 
 async function abrirDetalhes(id) {
-  const pedidos = await getPedidos();
-  const p = pedidos.find(x => x.id === id);
+  const p = pedidosCache.find(x => x.id === id);
   if (!p) return;
 
   detCliente.textContent = p.cliente || "-";
@@ -269,6 +313,9 @@ async function abrirDetalhes(id) {
   abrirModal(detalhesBackdrop);
 }
 
+/* =========================
+   Utils
+========================= */
 function formatETA(dataChegada) {
   if (!dataChegada) return "-";
   const agora = new Date();
@@ -283,4 +330,17 @@ function formatETA(dataChegada) {
   return dias > 0 ? `Em ${dias} dia(s)` : "Atrasado";
 }
 
+/* =========================
+   Refresh
+========================= */
+async function refresh(showLoader) {
+  await fetchPedidos(showLoader);
+  atualizarContadores();
+  await desenharGrafico();
+  renderTabela();
+}
+
+/* =========================
+   Init
+========================= */
 renderDashboard();

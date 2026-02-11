@@ -1,5 +1,6 @@
 // js/pages/login.js
 import { loginWithUsername } from "../data/auth.js";
+import { notify, showLoading, hideLoading } from "../core/ui.js";
 
 function renderLogin() {
   const app = document.getElementById("app");
@@ -56,7 +57,7 @@ function renderLogin() {
 
   async function doLogin() {
     const username = inputUser.value.trim();
-    const password = inputPass.value.trim();
+    const password = inputPass.value;
 
     clearError();
 
@@ -65,11 +66,20 @@ function renderLogin() {
       return;
     }
 
+    // Evita múltiplos cliques
+    btnLogin.disabled = true;
+
     try {
+      showLoading("Entrando...");
       await loginWithUsername(username, password);
+      notify.success("Login realizado com sucesso!");
       window.location.href = "index.html";
     } catch (e) {
+      console.error(e);
       showError(e.message || "Falha ao autenticar.");
+    } finally {
+      hideLoading();
+      btnLogin.disabled = false;
     }
   }
 
@@ -89,6 +99,9 @@ function renderLogin() {
   btnGoRegister.addEventListener("click", () => {
     window.location.href = "register.html";
   });
+
+  // Foco inicial no usuário
+  inputUser.focus();
 }
 
 renderLogin();

@@ -1,31 +1,42 @@
-// js/pages/historico.js (V2 - compatível com API async)
+// js/pages/historico.js
 import { renderLayout } from "../core/layout.js";
-import { getPedidos } from "../data/storage.js";
+import { getPedidos } from "../data/api.js";
+import { notify, showLoading, hideLoading } from "../core/ui.js";
 
+let pedidosCache = [];
+
+/* =========================
+   Boot
+========================= */
 async function renderHistorico() {
-  // Monta o layout base e marca menu ativo
   renderLayout("historico");
 
-  // Título da página
   const titleEl = document.getElementById("pageTitle");
   if (titleEl) titleEl.textContent = "📚 Histórico";
 
   const content = document.getElementById("pageContent");
+  content.innerHTML = buildHTML();
 
-  // Estrutura da página
-  content.innerHTML = `
+  bindFiltros();
+  bindExport();
+
+  await carregarPedidos();
+  renderTabela();
+}
+
+/* =========================
+   HTML
+========================= */
+function buildHTML() {
+  return `
     <div class="card">
       <div class="historico-top">
         <div style="text-align:center; font-size:18px; font-weight:700;">
           📊 Total: <span id="totalHistorico">0</span> pedidos
         </div>
         <div class="export-bar">
-          <button id="btnExportCSV" class="btn-secondary" title="Exportar para Excel (CSV)">
-            📤 Exportar CSV
-          </button>
-          <button id="btnPrintPDF" class="btn-secondary" title="Imprimir / Salvar em PDF">
-            🖨️ Imprimir / PDF
-          </button>
+          <button id="btnExportCSV" class="btn-secondary">📤 Exportar CSV</button>
+          <button id="btnPrintPDF" class="btn-secondary">🖨️ Imprimir / PDF</button>
         </div>
       </div>
     </div>
@@ -63,36 +74,31 @@ async function renderHistorico() {
       </table>
     </div>
   `;
-
-  // Liga filtros
-  const buscaEl = document.getElementById("buscaHistorico");
-  const filtroStatusEl = document.getElementById("filtroStatusHistorico");
-  const dataInicioEl = document.getElementById("dataInicio");
-  const dataFimEl = document.getElementById("dataFim");
-
-  buscaEl.addEventListener("input", renderTabela);
-  filtroStatusEl.addEventListener("change", renderTabela);
-  dataInicioEl.addEventListener("change", renderTabela);
-  dataFimEl.addEventListener("change", renderTabela);
-
-  // Liga exportações
-  document.getElementById("btnExportCSV").addEventListener("click", exportarCSV);
-  document.getElementById("btnPrintPDF").addEventListener("click", imprimirTabela);
-
-  // Render inicial
-  await renderTabela();
 }
 
-async function obterFiltrados() {
+/* =========================
+   Data
+========================= */
+async function carregarPedidos() {
+  try {
+    showLoading("Carregando histórico...");
+    pedidosCache = await getPedidos();
+  } catch (e) {
+    console.error(e);
+    notify.error("Erro ao carregar histórico.");
+    pedidosCache = [];
+  } finally {
+    hideLoading();
+  }
+}
+
+function obterFiltrados() {
   const busca = document.getElementById("buscaHistorico").value.toLowerCase();
   const status = document.getElementById("filtroStatusHistorico").value;
   const dataInicio = document.getElementById("dataInicio").value;
   const dataFim = document.getElementById("dataFim").value;
 
-  const pedidos = await getPedidos();
-  const lista = Array.isArray(pedidos) ? pedidos : [];
-
-  return lista.filter(p => {
+  return pedidosCache.filter(p => {
     const cliente = (p.cliente || "").toLowerCase();
     const produto = (p.produto || "").toLowerCase();
 
@@ -104,15 +110,16 @@ async function obterFiltrados() {
   });
 }
 
-async function renderTabela() {
+/* =========================
+   Render
+========================= */
+function renderTabela() {
   const tabela = document.getElementById("tabelaHistorico");
   const totalEl = document.getElementById("totalHistorico");
 
-  const filtrados = await obterFiltrados();
+  const filtrados = obterFiltrados();
 
   tabela.innerHTML = "";
-
-  // Atualiza contador
   totalEl.textContent = filtrados.length;
 
   filtrados.forEach(p => {
@@ -134,15 +141,29 @@ async function renderTabela() {
   });
 }
 
-/* ===========================
-   EXPORTAÇÕES
-   =========================== */
+/* =========================
+   Filtros
+========================= */
+function bindFiltros() {
+  ["buscaHistorico", "filtroStatusHistorico", "dataInicio", "dataFim"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", renderTabela);
+    if (el) el.addEventListener("change", renderTabela);
+  });
+}
 
-// CSV (abre no Excel)
-async function exportarCSV() {
-  const dados = await obterFiltrados();
+/* =========================
+   Exportações
+========================= */
+function bindExport() {
+  document.getElementById("btnExportCSV").onclick = exportarCSV;
+  document.getElementById("btnPrintPDF").onclick = imprimirTabela;
+}
+
+function exportarCSV() {
+  const dados = obterFiltrados();
   if (!dados.length) {
-    alert("Não há registros para exportar com os filtros atuais.");
+    notify.warning("Não há registros para exportar com os filtros atuais.");
     return;
   }
 
@@ -175,7 +196,6 @@ async function exportarCSV() {
   URL.revokeObjectURL(url);
 }
 
-// Impressão / PDF (usa o print do navegador)
 function imprimirTabela() {
   const tabela = document.getElementById("tabelaExport");
   if (!tabela) return;
@@ -208,5 +228,7 @@ function imprimirTabela() {
   win.print();
 }
 
-// Inicializa a página
+/* =========================
+   Init
+========================= */
 renderHistorico();

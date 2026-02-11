@@ -1,35 +1,55 @@
-// js/chart.js (V2 - compatível com API async)
-import { getPedidos } from "./data/storage.js";
+// js/chart.js
+import { getPedidos } from "./data/api.js";
+import { notify } from "./core/ui.js";
 
-let chartCtx = null;
+let lastData = null;
+let resizeBound = false;
 
 /**
- * Desenha um gráfico simples no canvas #grafico
- * Mostra a quantidade de pedidos DE HOJE por status:
- * - Pendente
- * - Chegou
- * - Cliente avisado
+ * Desenha o gráfico de pedidos de hoje.
+ * Se `pedidos` for passado, usa esses dados (evita novo fetch).
+ * Caso contrário, busca na API.
  */
-export async function desenharGrafico() {
+export async function desenharGrafico(pedidos = null) {
   const canvas = document.getElementById("grafico");
   if (!canvas) return;
 
   const ctx = canvas.getContext("2d");
-  chartCtx = ctx;
 
-  // Limpa o canvas
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  try {
+    let lista = pedidos;
 
-  // Agora buscamos os pedidos de forma ASSÍNCRONA
-  const pedidos = await getPedidos();
+    if (!Array.isArray(lista)) {
+      lista = await getPedidos();
+    }
 
-  // Garante que sempre trabalhamos com array
-  const lista = Array.isArray(pedidos) ? pedidos : [];
+    lastData = Array.isArray(lista) ? lista : [];
 
-  // Data de hoje no formato YYYY-MM-DD
+    render(ctx, canvas, lastData);
+
+    // Redesenha ao redimensionar a tela (só registra uma vez)
+    if (!resizeBound) {
+      window.addEventListener("resize", () => {
+        if (lastData) render(ctx, canvas, lastData);
+      });
+      resizeBound = true;
+    }
+  } catch (e) {
+    console.error("Erro ao desenhar gráfico:", e);
+    notify.error("Erro ao carregar gráfico.");
+    clearCanvas(ctx, canvas);
+    drawEmptyState(ctx, canvas, "Erro ao carregar dados");
+  }
+}
+
+/* =========================
+   Render Core
+========================= */
+function render(ctx, canvas, pedidos) {
+  clearCanvas(ctx, canvas);
+
   const hoje = new Date().toISOString().slice(0, 10);
-
-  const deHoje = lista.filter(p => p.dataPedido === hoje);
+  const deHoje = pedidos.filter(p => p.dataPedido === hoje);
 
   const pendentes = deHoje.filter(p => p.status === "Pendente").length;
   const chegaram = deHoje.filter(p => p.status === "Chegou").length;
@@ -37,9 +57,36 @@ export async function desenharGrafico() {
 
   const valores = [pendentes, chegaram, avisados];
   const labels = ["Pendentes", "Chegaram", "Avisados"];
-  const cores = ["#f59e0b", "#16a34a", "#2563eb"];
+
+  const styles = getComputedStyle(document.body);
+  const cores = [
+    styles.getPropertyValue("--warning").trim() || "#f59e0b",
+    styles.getPropertyValue("--success").trim() || "#16a34a",
+    styles.getPropertyValue("--info").trim() || "#2563eb",
+  ];
+
+  const total = valores.reduce((a, b) => a + b, 0);
+
+  if (total === 0) {
+    drawEmptyState(ctx, canvas, "Nenhum pedido hoje");
+    return;
+  }
 
   desenharBarras(ctx, canvas, valores, labels, cores);
+}
+
+/* =========================
+   Drawing Helpers
+========================= */
+function clearCanvas(ctx, canvas) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawEmptyState(ctx, canvas, text) {
+  ctx.fillStyle = "#999";
+  ctx.font = "16px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
 }
 
 function desenharBarras(ctx, canvas, valores, labels, cores) {
@@ -48,7 +95,8 @@ function desenharBarras(ctx, canvas, valores, labels, cores) {
   const alturaDisponivel = canvas.height - padding * 2;
 
   const maxValor = Math.max(1, ...valores);
-  const larguraBarra = larguraDisponivel / valores.length - 20;
+  const gap = 20;
+  const larguraBarra = larguraDisponivel / valores.length - gap;
 
   // Eixos
   ctx.strokeStyle = "#888";
@@ -59,7 +107,7 @@ function desenharBarras(ctx, canvas, valores, labels, cores) {
   ctx.stroke();
 
   valores.forEach((valor, i) => {
-    const x = padding + i * (larguraBarra + 20) + 20;
+    const x = padding + i * (larguraBarra + gap) + gap;
     const alturaBarra = (valor / maxValor) * (alturaDisponivel - 20);
     const y = canvas.height - padding - alturaBarra;
 
