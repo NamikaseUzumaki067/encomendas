@@ -13,8 +13,14 @@
     script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline';
     img-src 'self' data:;
     font-src https://cdnjs.cloudflare.com;
-    connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net;
+    connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https://*.vercel-insights.com;
   " />
+
+  <!-- Vercel Web Analytics -->
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
 
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
