@@ -7,6 +7,9 @@ import { notify, confirmBox, showLoading, hideLoading } from "../core/ui.js";
 let ticker = null;
 let pedidosCache = [];
 
+const DELIVERY_ALERTS_KEY = "delivery_alerts_v1";
+const ALERTA_PROXIMO_DIAS = 3;
+
 /* =========================
    Boot
 ========================= */
@@ -22,6 +25,7 @@ async function renderDashboard() {
   bindFilters();
   bindModais();
 
+  await requestNotificationPermissionIfNeeded();
   await refresh(true);
 
   if (ticker) clearInterval(ticker);
@@ -314,20 +318,163 @@ async function abrirDetalhes(id) {
 }
 
 /* =========================
+   Notificações de entrega
+========================= */
+async function requestNotificationPermissionIfNeeded() {
+  if (!("Notification" in window)) return;
+
+  try {
+    if (Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+  } catch (e) {
+    console.warn("Não foi possível solicitar permissão de notificação:", e);
+  }
+}
+
+function avaliarNotificacoesEntrega() {
+  if (!Array.isArray(pedidosCache) || !pedidosCache.length) return;
+
+  const state = loadDeliveryAlerts();
+  const activeKeys = new Set();
+  const hoje = startOfDay(new Date());
+
+  pedidosCache.forEach(pedido => {
+    if (!pedido?.id || !pedido?.dataChegada) return;
+    if (pedido.status && pedido.status !== "Pendente") return;
+
+    const dataEntrega = parseDateOnly(pedido.dataChegada);
+    if (!dataEntrega) return;
+
+    const diffDias = diffInDays(hoje, dataEntrega);
+    const alertType = getDeliveryAlertType(diffDias);
+    if (!alertType) return;
+
+    const alertKey = buildAlertKey(pedido, alertType);
+    activeKeys.add(alertKey);
+
+    if (state[alertKey]) return;
+
+    emitirNotificacaoEntrega(pedido, alertType, diffDias);
+    state[alertKey] = new Date().toISOString();
+  });
+
+  cleanupDeliveryAlerts(state, activeKeys);
+  saveDeliveryAlerts(state);
+}
+
+function getDeliveryAlertType(diffDias) {
+  if (diffDias === ALERTA_PROXIMO_DIAS) return "proximo";
+  if (diffDias === 0) return "hoje";
+  return null;
+}
+
+function emitirNotificacaoEntrega(pedido, alertType) {
+  const dataFormatada = formatDateBR(pedido.dataChegada);
+
+  const title = alertType === "hoje"
+    ? `📦 Entrega prevista hoje: ${pedido.cliente}`
+    : `📦 Entrega próxima: ${pedido.cliente}`;
+
+  const body = alertType === "hoje"
+    ? `${pedido.produto} está previsto para chegar hoje (${dataFormatada}).`
+    : `${pedido.produto} está previsto para chegar em ${ALERTA_PROXIMO_DIAS} dias (${dataFormatada}).`;
+
+  if (alertType === "hoje") {
+    notify.success(`${pedido.cliente}: ${pedido.produto} está previsto para chegar hoje.`, 6000);
+  } else {
+    notify.info(`${pedido.cliente}: ${pedido.produto} está próximo de chegar (${dataFormatada}).`, 6000);
+  }
+
+  showDesktopNotification(title, body);
+}
+
+function showDesktopNotification(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  try {
+    new Notification(title, {
+      body,
+      tag: `delivery-${title}`,
+      renotify: false,
+    });
+  } catch (e) {
+    console.warn("Falha ao exibir notificação do sistema:", e);
+  }
+}
+
+function loadDeliveryAlerts() {
+  try {
+    const raw = localStorage.getItem(DELIVERY_ALERTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDeliveryAlerts(state) {
+  try {
+    localStorage.setItem(DELIVERY_ALERTS_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn("Falha ao salvar estado das notificações:", e);
+  }
+}
+
+function cleanupDeliveryAlerts(state, activeKeys) {
+  Object.keys(state).forEach(key => {
+    if (!activeKeys.has(key)) delete state[key];
+  });
+}
+
+function buildAlertKey(pedido, alertType) {
+  return `${pedido.id}:${pedido.dataChegada}:${alertType}`;
+}
+
+/* =========================
    Utils
 ========================= */
 function formatETA(dataChegada) {
   if (!dataChegada) return "-";
-  const agora = new Date();
-  const alvo = new Date(dataChegada + "T00:00:00");
-  const diffMs = alvo - agora;
+
+  const hoje = startOfDay(new Date());
+  const alvo = parseDateOnly(dataChegada);
+  if (!alvo) return "-";
+
+  const dias = diffInDays(hoje, alvo);
+
+  if (dias < 0) return "Atrasado";
+  if (dias === 0) return "Hoje";
+  return `Em ${dias} dia(s)`;
+}
+
+function parseDateOnly(dateString) {
+  if (!dateString) return null;
+
+  const [year, month, day] = String(dateString).split("-").map(Number);
+  if (!year || !month || !day) return null;
+
+  return new Date(year, month - 1, day);
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function diffInDays(from, to) {
   const oneDay = 24 * 60 * 60 * 1000;
+  return Math.round((startOfDay(to) - startOfDay(from)) / oneDay);
+}
 
-  if (diffMs < -oneDay) return "Atrasado";
-  if (Math.abs(diffMs) < oneDay) return "Hoje";
+function formatDateBR(dateString) {
+  const data = parseDateOnly(dateString);
+  if (!data) return dateString || "-";
 
-  const dias = Math.ceil(diffMs / oneDay);
-  return dias > 0 ? `Em ${dias} dia(s)` : "Atrasado";
+  const dia = String(data.getDate()).padStart(2, "0");
+  const mes = String(data.getMonth() + 1).padStart(2, "0");
+  const ano = data.getFullYear();
+  return `${dia}/${mes}/${ano}`;
 }
 
 /* =========================
@@ -336,7 +483,8 @@ function formatETA(dataChegada) {
 async function refresh(showLoader) {
   await fetchPedidos(showLoader);
   atualizarContadores();
-  await desenharGrafico();
+  avaliarNotificacoesEntrega();
+  await desenharGrafico(pedidosCache);
   renderTabela();
 }
 

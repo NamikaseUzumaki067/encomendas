@@ -24,10 +24,21 @@ const routes = {
 /* Páginas públicas (não exigem login) */
 const publicPages = new Set(["login.html", "register.html"]);
 
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+
+  try {
+    await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+  } catch (err) {
+    console.warn("Falha ao registrar service worker:", err);
+  }
+}
+
 /* =========================
    Bootstrap
 ========================= */
 async function startApp() {
+  await registerServiceWorker();
   const page = getPageName();
 
   try {
