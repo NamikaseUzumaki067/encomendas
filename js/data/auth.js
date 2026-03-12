@@ -1,23 +1,20 @@
 // js/data/auth.js
 import { supabase } from "./storage.js";
 
-// Domínio corporativo padrão (pode virar config no futuro)
-const DOMAIN = "@empresa.local";
-
 /* ===============================
    Helpers
 ================================ */
 
-function normalizeUsername(username) {
-  const u = (username || "").trim().toLowerCase();
-  if (!u) throw new Error("Usuário inválido.");
-  return u;
-}
+function normalizeEmail(emailOrUsername) {
+  const value = (emailOrUsername || "").trim().toLowerCase();
 
-function toEmail(username) {
-  const u = normalizeUsername(username);
-  if (u.includes("@")) return u;
-  return `${u}${DOMAIN}`;
+  if (!value) {
+    throw new Error("Informe seu e-mail ou usuário.");
+  }
+
+  // Mantém compatibilidade com o sistema antigo
+  if (value.includes("@")) return value;
+  return `${value}@empresa.local`;
 }
 
 function handleAuthError(error, fallbackMessage) {
@@ -25,23 +22,33 @@ function handleAuthError(error, fallbackMessage) {
   throw new Error(error?.message || fallbackMessage || "Erro de autenticação.");
 }
 
+function mapProfile(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    fullName: row.full_name || "",
+    email: row.email || "",
+    role: row.role || "user",
+    createdAt: row.created_at || null,
+  };
+}
+
 /* ===============================
    Auth API
 ================================ */
 
-/**
- * 🔐 Login usando usuário + senha
- */
 export async function loginWithUsername(username, password) {
-  if (!username || !password) {
-    throw new Error("Informe usuário e senha.");
-  }
+  const email = normalizeEmail(username);
 
-  const email = toEmail(username);
+  if (!password) {
+    throw new Error("Informe sua senha.");
+  }
 
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
-    password
+    password,
   });
 
   if (error) handleAuthError(error, "Falha ao autenticar.");
@@ -49,24 +56,25 @@ export async function loginWithUsername(username, password) {
   return data?.user || null;
 }
 
-/**
- * 🆕 Registro de usuário com nome completo
- */
 export async function registerWithProfile({ nome, usuario, senha }) {
+  const email = normalizeEmail(usuario);
+
   if (!nome || !usuario || !senha) {
     throw new Error("Preencha todos os campos para cadastro.");
   }
 
-  const email = toEmail(usuario);
+  if (senha.length < 6) {
+    throw new Error("A senha deve ter pelo menos 6 caracteres.");
+  }
 
   const { data, error } = await supabase.auth.signUp({
     email,
     password: senha,
     options: {
       data: {
-        full_name: nome
-      }
-    }
+        full_name: nome,
+      },
+    },
   });
 
   if (error) handleAuthError(error, "Erro ao criar conta.");
@@ -74,24 +82,20 @@ export async function registerWithProfile({ nome, usuario, senha }) {
   return data?.user || null;
 }
 
-/**
- * 🚪 Logout
- */
 export async function logout() {
   const { error } = await supabase.auth.signOut();
   if (error) handleAuthError(error, "Erro ao sair da sessão.");
 }
 
-/**
- * 👤 Usuário logado (ou null)
- */
 export async function getCurrentUser() {
   try {
     const { data, error } = await supabase.auth.getUser();
+
     if (error) {
       console.warn("Erro ao obter usuário atual:", error);
       return null;
     }
+
     return data?.user || null;
   } catch (e) {
     console.warn("Falha ao obter usuário atual:", e);
@@ -99,14 +103,53 @@ export async function getCurrentUser() {
   }
 }
 
-/**
- * 🔒 Garante que há um usuário logado
- * Lança erro se não houver
- */
 export async function requireAuth() {
   const user = await getCurrentUser();
+
   if (!user) {
     throw new Error("Usuário não autenticado.");
   }
+
   return user;
+}
+
+/* ===============================
+   Profile API
+================================ */
+
+export async function getMyProfile() {
+  const user = await requireAuth();
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, company_id, full_name, email, role, created_at")
+    .eq("id", user.id)
+    .single();
+
+  if (error) {
+    handleAuthError(error, "Não foi possível carregar o perfil do usuário.");
+  }
+
+  return mapProfile(data);
+}
+
+export async function getMyCompany() {
+  const profile = await getMyProfile();
+
+  const { data, error } = await supabase
+    .from("companies")
+    .select("id, name, slug, created_at")
+    .eq("id", profile.companyId)
+    .single();
+
+  if (error) {
+    handleAuthError(error, "Não foi possível carregar a empresa do usuário.");
+  }
+
+  return data || null;
+}
+
+export async function isAdminLike() {
+  const profile = await getMyProfile();
+  return ["admin", "manager"].includes(profile.role);
 }

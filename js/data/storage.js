@@ -5,15 +5,31 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
    Configuração
 ================================ */
 
-// ⚠️ Em produção idealmente isso vem de variáveis de ambiente ou arquivo de config
-const SUPABASE_CONFIG = {
-  url: "https://ljhgeoetyvhbafewnmgw.supabase.co",
-  anonKey: "sb_publishable_85mJLqObjWFtZLFhefNm3w_b7o7sqZX",
-};
+/**
+ * Configure estas variáveis em um arquivo carregado antes do app, por exemplo:
+ *
+ * <script>
+ *   window.__ENV__ = {
+ *     SUPABASE_URL: "https://SEU-PROJETO.supabase.co",
+ *     SUPABASE_ANON_KEY: "SUA_ANON_KEY"
+ *   };
+ * </script>
+ */
+
+function getEnv() {
+  const env = window.__ENV__ || {};
+
+  return {
+    url: env.SUPABASE_URL || "",
+    anonKey: env.SUPABASE_ANON_KEY || "",
+  };
+}
 
 function validateConfig(config) {
-  if (!config?.url || !config?.anonKey) {
-    throw new Error("Configuração do Supabase inválida. Verifique URL e ANON KEY.");
+  if (!config.url || !config.anonKey) {
+    throw new Error(
+      "Supabase não configurado. Defina window.__ENV__.SUPABASE_URL e window.__ENV__.SUPABASE_ANON_KEY."
+    );
   }
 }
 
@@ -24,19 +40,18 @@ function validateConfig(config) {
 let supabaseClient = null;
 
 function createSupabaseClient() {
-  validateConfig(SUPABASE_CONFIG);
+  const config = getEnv();
+  validateConfig(config);
 
-  return createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+  return createClient(config.url, config.anonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      detectSessionInUrl: true,
     },
   });
 }
 
-/**
- * Retorna a instância única do Supabase para a aplicação inteira
- */
 export function getSupabase() {
   if (!supabaseClient) {
     supabaseClient = createSupabaseClient();
@@ -44,7 +59,4 @@ export function getSupabase() {
   return supabaseClient;
 }
 
-/**
- * Export padrão para manter compatibilidade com o código atual
- */
 export const supabase = getSupabase();
