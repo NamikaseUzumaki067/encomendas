@@ -1,4 +1,4 @@
-const CACHE_NAME = "nova-saude-v1";
+const CACHE_NAME = "nova-saude-v2";
 
 const APP_SHELL = [
   "./",
@@ -7,8 +7,29 @@ const APP_SHELL = [
   "./login.html",
   "./register.html",
   "./manifest.webmanifest",
+
   "./css/styles.css",
+
   "./js/app.js",
+  "./js/chart.js",
+  "./js/theme.js",
+
+  "./js/core/layout.js",
+  "./js/core/router.js",
+  "./js/core/ui.js",
+
+  "./js/data/api.js",
+  "./js/data/auth.js",
+  "./js/data/storage.js",
+
+  "./js/pages/dashboard.js",
+  "./js/pages/historico.js",
+  "./js/pages/login.js",
+  "./js/pages/register.js",
+
+  "./js/services/audit.js",
+  "./js/services/export.js",
+
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
